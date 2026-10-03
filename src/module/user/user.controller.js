@@ -1,54 +1,54 @@
 import { Router } from "express";
+
 import {
     response
 } from "../../common/utils/response.js";
+
 import {
     auth,
-    authorization
+    authorization,
+    validator
 } from "../../common/middleware/index.js";
+
 import {
-    createUser,
-    login,
+    getUserById,
     getAllUsers
 } from "./user.service.js";
+
 import {
     decrypting
 } from "../../common/utils/encrypting.js";
-import { roleEnum } from "../../common/enum/role.enum.js";
+
+import {
+    roleEnum
+} from "../../common/enum/role.enum.js";
+
+import {
+    getUserByIdSchema,
+    paginationSchema
+} from "./user.validation.js";
+
 const userRouter = Router();
-userRouter.post(
-    "/signup",
+
+userRouter.get(
+    "/all",
+    auth,
+    authorization(roleEnum.admin),
+    validator(
+        paginationSchema
+    ),
     async (req, res, next) => {
         try {
-            const user = await createUser(
-                req.body
-            );
+            const users =
+                await getAllUsers(
+                    req.validated.query
+                );
 
             return response({
                 res,
-                data: user,
-                status: 201,
-                message: "user created"
-            });
-        } catch (error) {
-            next(error);
-        }
-    }
-);
-
-userRouter.post(
-    "/login",
-    async (req, res, next) => {
-        try {
-            const user = await login(
-                req.body
-            );
-
-            return response({
-                res,
-                data: user,
+                data: users,
                 status: 200,
-                message: "user login"
+                message: "users fetched"
             });
         } catch (error) {
             next(error);
@@ -57,16 +57,24 @@ userRouter.post(
 );
 
 userRouter.get(
-    "/",
+    "/:userId",
     auth,
+    validator(
+        getUserByIdSchema
+    ),
     async (req, res, next) => {
         try {
-            const user = req.user;
+            const user =
+                await getUserById(
+                    req.validated
+                        .params.userId
+                );
 
             if (user.phone) {
-                user.phone = decrypting(
-                    user.phone
-                );
+                user.phone =
+                    decrypting(
+                        user.phone
+                    );
             }
 
             return response({
@@ -82,23 +90,29 @@ userRouter.get(
 );
 
 userRouter.get(
-    "/all",
+    "/",
     auth,
-    authorization(roleEnum.admin),
     async (req, res, next) => {
         try {
-            const users =
-                await getAllUsers();
+            const user = req.user;
+
+            if (user.phone) {
+                user.phone =
+                    decrypting(
+                        user.phone
+                    );
+            }
 
             return response({
                 res,
-                data: users,
+                data: user,
                 status: 200,
-                message: "users fetched"
+                message: "user fetched"
             });
         } catch (error) {
             next(error);
         }
     }
 );
+
 export default userRouter;
