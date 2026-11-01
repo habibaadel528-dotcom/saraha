@@ -5,10 +5,16 @@ import { messageTypeEnum } from "../../common/enum/index.js";
 import { BadRequestException } from "../../common/exceptions/index.js";
 
 import userModel from "../../db/model/user.model.js";
+import identityRequestModel from "../../db/model/identityRequest.model.js";
+
 import * as messageRepo from "../../db/repository/message.repo.js";
 import { findOne } from "../../db/repository/base.repo.js";
 
-export const sendMessage = async (data, files = [], senderId = null) => {
+export const sendMessage = async (
+    data,
+    files = [],
+    senderId = null
+) => {
     const { receiverId } = data;
 
     const user = await findOne({
@@ -75,13 +81,62 @@ export const getMessages = async (
             BadRequestException("wrong type value");
     }
 
-    return await messageRepo.findMessages({
+    const result = await messageRepo.findMessages({
         where: filter,
         page,
         limit,
         skip: (page - 1) * limit,
         sort: { createdAt: -1 }
     });
+
+    // Check which received messages have an accepted identity request.
+    const receivedMessages = result.data.filter(
+        (message) =>
+            message.receiverId.toString() === userId.toString()
+            && message.senderId
+    );
+
+    const acceptedRequests = receivedMessages.length
+        ? await identityRequestModel.find({
+            requesterId: userId,
+            messageId: {
+                $in: receivedMessages.map(
+                    (message) => message._id
+                )
+            },
+            status: "accepted"
+        }).select("messageId")
+        : [];
+
+    const acceptedMessageIds = new Set(
+        acceptedRequests.map(
+            (request) => request.messageId.toString()
+        )
+    );
+
+    // Hide senderId from receiver until identity is accepted.
+    const safeData = result.data.map((message) => {
+        const item = message.toObject
+            ? message.toObject()
+            : { ...message };
+
+        const isReceiver =
+            item.receiverId.toString() === userId.toString();
+
+        const identityAccepted =
+            acceptedMessageIds.has(item._id.toString());
+
+        if (isReceiver && !identityAccepted) {
+            delete item.senderId;
+        }
+
+        return item;
+    });
+
+    return {
+        ...result,
+        data: safeData
+    };
 };
 
 export const deleteMessage = async (userId, id) => {
